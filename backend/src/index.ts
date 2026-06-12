@@ -39,6 +39,10 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Ներքին սերվերի սխալ' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🎊 Wedding Planner API-ն աշխատում է http://localhost:${PORT}-ում`);
-});
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🎊 Wedding Planner API-ն աշխատում է http://localhost:${PORT}-ում`);
+  });
+}
