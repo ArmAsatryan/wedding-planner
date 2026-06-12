@@ -16,6 +16,18 @@ const guestSchema = z.object({
   notes: z.string().optional(),
 });
 
+const spouseSchema = z.object({
+  firstName: z.string().min(1, 'Ամուսնու/կնոջի անունը պարտադիր է'),
+  lastName: z.string().min(1, 'Ամուսնու/կնոջի ազգանունը պարտադիր է'),
+  phone: z.string().optional(),
+  rsvp: z.enum(['INVITED', 'CONFIRMED', 'DECLINED', 'PENDING']).optional(),
+  notes: z.string().optional(),
+});
+
+const createGuestSchema = guestSchema.extend({
+  spouse: spouseSchema.optional(),
+});
+
 router.use(authenticate);
 
 router.get('/', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
@@ -34,13 +46,38 @@ router.get('/', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
 router.post('/', projectAccess('EDITOR'), async (req: AuthRequest, res) => {
   if (!canEdit(req.projectRole)) return res.status(403).json({ error: 'Խմբագրման իրավունք չկա' });
 
-  const parsed = guestSchema.safeParse(req.body);
+  const parsed = createGuestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
-  const guest = await prisma.guest.create({
-    data: { ...parsed.data, projectId: param(req, 'projectId') },
+  const { spouse, ...guestData } = parsed.data;
+  const projectId = param(req, 'projectId');
+
+  if (!spouse) {
+    const guest = await prisma.guest.create({
+      data: { ...guestData, projectId },
+    });
+    return res.status(201).json({ guest });
+  }
+
+  const [guest, spouseGuest] = await prisma.$transaction(async (tx) => {
+    const createdGuest = await tx.guest.create({ data: { ...guestData, projectId } });
+    const createdSpouse = await tx.guest.create({
+      data: {
+        ...spouse,
+        side: guestData.side,
+        rsvp: spouse.rsvp ?? guestData.rsvp,
+        partnerId: createdGuest.id,
+        projectId,
+      },
+    });
+    const linkedGuest = await tx.guest.update({
+      where: { id: createdGuest.id },
+      data: { partnerId: createdSpouse.id },
+    });
+    return [linkedGuest, createdSpouse] as const;
   });
-  res.status(201).json(guest);
+
+  res.status(201).json({ guest, spouse: spouseGuest });
 });
 
 router.put('/:guestId', projectAccess('EDITOR'), async (req: AuthRequest, res) => {

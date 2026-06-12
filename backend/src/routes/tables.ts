@@ -22,6 +22,55 @@ const autoDistributeSchema = z.object({
   tableNamePrefix: z.string().optional(),
 });
 
+async function getGuestAssignmentGroup(guestId: string) {
+  const guest = await prisma.guest.findUnique({
+    where: { id: guestId },
+    select: { id: true, partnerId: true },
+  });
+  if (!guest) return null;
+  return guest.partnerId ? [guest.id, guest.partnerId] : [guest.id];
+}
+
+function buildPartnerGroups(guestIds: string[], partnerById: Map<string, string | null>) {
+  const groups: string[][] = [];
+  const used = new Set<string>();
+
+  for (const id of guestIds) {
+    if (used.has(id)) continue;
+    const partnerId = partnerById.get(id);
+    if (partnerId && guestIds.includes(partnerId) && !used.has(partnerId)) {
+      groups.push([id, partnerId]);
+      used.add(id);
+      used.add(partnerId);
+    } else {
+      groups.push([id]);
+      used.add(id);
+    }
+  }
+
+  return groups;
+}
+
+function chunkGroups(groups: string[][], peoplePerTable: number) {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+
+  for (const group of groups) {
+    if (current.length > 0 && current.length + group.length > peoplePerTable) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(...group);
+    if (current.length >= peoplePerTable) {
+      chunks.push(current);
+      current = [];
+    }
+  }
+
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 router.use(authenticate);
 
 router.get('/', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
@@ -95,32 +144,58 @@ router.post('/:tableId/assign', projectAccess('EDITOR'), async (req: AuthRequest
   const parsed = assignSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
+  const tableId = param(req, 'tableId');
+  const guestIds = await getGuestAssignmentGroup(parsed.data.guestId);
+  if (!guestIds) return res.status(404).json({ error: 'Հյուրը չի գտնվել' });
+
   const table = await prisma.seatingTable.findUnique({
-    where: { id: param(req, 'tableId') },
+    where: { id: tableId },
     include: { guests: true },
   });
   if (!table) return res.status(404).json({ error: 'Սեղանը չի գտնվել' });
-  if (table.guests.length >= table.capacity) {
-    return res.status(400).json({ error: 'Սեղանը լիքն է' });
+
+  const seatsNeeded = guestIds.filter(
+    (id) => !table.guests.some((assignment) => assignment.guestId === id)
+  ).length;
+
+  if (table.guests.length + seatsNeeded > table.capacity) {
+    return res.status(400).json({
+      error: guestIds.length > 1
+        ? 'Սեղանին բավարար տեղ չկա զույգի համար'
+        : 'Սեղանը լիքն է',
+    });
   }
 
-  const existing = await prisma.tableGuest.findUnique({ where: { guestId: parsed.data.guestId } });
-  if (existing) {
-    await prisma.tableGuest.delete({ where: { id: existing.id } });
-  }
-
-  const assignment = await prisma.tableGuest.create({
-    data: { tableId: param(req, 'tableId'), guestId: parsed.data.guestId },
-    include: { guest: true },
+  await prisma.tableGuest.deleteMany({
+    where: { guestId: { in: guestIds } },
   });
-  res.status(201).json(assignment);
+
+  const assignments = await prisma.$transaction(
+    guestIds.map((guestId) =>
+      prisma.tableGuest.create({
+        data: { tableId, guestId },
+        include: { guest: true },
+      })
+    )
+  );
+
+  res.status(201).json({
+    assignments,
+    message: guestIds.length > 1 ? 'Զույգը տեղադրված է սեղանի մոտ' : undefined,
+  });
 });
 
 router.delete('/:tableId/guests/:guestId', projectAccess('EDITOR'), async (req: AuthRequest, res) => {
   if (!canEdit(req.projectRole)) return res.status(403).json({ error: 'Խմբագրման իրավունք չկա' });
 
+  const guestIds = await getGuestAssignmentGroup(param(req, 'guestId'));
+  if (!guestIds) return res.status(404).json({ error: 'Հյուրը չի գտնվել' });
+
   await prisma.tableGuest.deleteMany({
-    where: { tableId: param(req, 'tableId'), guestId: param(req, 'guestId') },
+    where: {
+      tableId: param(req, 'tableId'),
+      guestId: { in: guestIds },
+    },
   });
   res.json({ message: 'Հյուրը հանվել է սեղանից' });
 });
@@ -136,7 +211,7 @@ router.post('/auto-distribute', projectAccess('EDITOR'), async (req: AuthRequest
 
   const guests = await prisma.guest.findMany({
     where: { id: { in: guestIds }, projectId },
-    select: { id: true, side: true },
+    select: { id: true, side: true, partnerId: true },
   });
 
   if (guests.length !== guestIds.length) {
@@ -147,19 +222,19 @@ router.post('/auto-distribute', projectAccess('EDITOR'), async (req: AuthRequest
     where: { guestId: { in: guestIds } },
   });
 
+  const partnerById = new Map(guests.map((g) => [g.id, g.partnerId]));
+
   const sideGroups = [
-    { side: 'BRIDE' as const, prefix: 'Հարսի սեղան', ids: guests.filter((g) => g.side === 'BRIDE').map((g) => g.id) },
-    { side: 'GROOM' as const, prefix: 'Փեսայի սեղան', ids: guests.filter((g) => g.side === 'GROOM').map((g) => g.id) },
+    { prefix: 'Հարսի սեղան', ids: guests.filter((g) => g.side === 'BRIDE').map((g) => g.id) },
+    { prefix: 'Փեսայի սեղան', ids: guests.filter((g) => g.side === 'GROOM').map((g) => g.id) },
   ];
 
   const createdTables = [];
   for (const group of sideGroups) {
     if (group.ids.length === 0) continue;
 
-    const chunks: string[][] = [];
-    for (let i = 0; i < group.ids.length; i += peoplePerTable) {
-      chunks.push(group.ids.slice(i, i + peoplePerTable));
-    }
+    const partnerGroups = buildPartnerGroups(group.ids, partnerById);
+    const chunks = chunkGroups(partnerGroups, peoplePerTable);
 
     for (let i = 0; i < chunks.length; i++) {
       const table = await prisma.seatingTable.create({

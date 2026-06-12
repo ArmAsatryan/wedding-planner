@@ -20,6 +20,13 @@ const emptyForm: GuestInput = {
   notes: '',
 };
 
+const emptySpouse = {
+  firstName: '',
+  lastName: '',
+  phone: '',
+  notes: '',
+};
+
 export function GuestsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -28,6 +35,8 @@ export function GuestsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Guest | null>(null);
   const [form, setForm] = useState<GuestInput>(emptyForm);
+  const [addSpouse, setAddSpouse] = useState(false);
+  const [spouseForm, setSpouseForm] = useState(emptySpouse);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'BRIDE' | 'GROOM'>('ALL');
@@ -46,6 +55,8 @@ export function GuestsPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setAddSpouse(false);
+    setSpouseForm(emptySpouse);
     setError('');
     setModalOpen(true);
   };
@@ -73,7 +84,17 @@ export function GuestsPage() {
       if (editing) {
         await api.guests.update(projectId, editing.id, form);
       } else {
-        await api.guests.create(projectId, form);
+        const payload: GuestInput = { ...form };
+        if (addSpouse) {
+          payload.spouse = {
+            firstName: spouseForm.firstName,
+            lastName: spouseForm.lastName,
+            phone: spouseForm.phone || undefined,
+            rsvp: form.rsvp,
+            notes: spouseForm.notes || undefined,
+          };
+        }
+        await api.guests.create(projectId, payload);
       }
       setModalOpen(false);
       load();
@@ -193,6 +214,51 @@ export function GuestsPage() {
             ))}
           </Select>
           <Input label="Նշումներ" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+
+          {!editing && (
+            <div className="space-y-3 rounded-xl border border-rose-100 p-4 bg-rose-50/50">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addSpouse}
+                  onChange={(e) => setAddSpouse(e.target.checked)}
+                  className="rounded border-rose-300 text-rose-600"
+                />
+                <span className="text-sm font-medium text-rose-800">Ավելացնել նաև ամուսնուն/կնոջը</span>
+              </label>
+
+              {addSpouse && (
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs text-rose-500">Կիսվի նույն կողմից և RSVP կարգավիճակով</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Անուն"
+                      value={spouseForm.firstName}
+                      onChange={(e) => setSpouseForm({ ...spouseForm, firstName: e.target.value })}
+                      required={addSpouse}
+                    />
+                    <Input
+                      label="Ազգանուն"
+                      value={spouseForm.lastName}
+                      onChange={(e) => setSpouseForm({ ...spouseForm, lastName: e.target.value })}
+                      required={addSpouse}
+                    />
+                  </div>
+                  <Input
+                    label="Հեռախոս"
+                    value={spouseForm.phone}
+                    onChange={(e) => setSpouseForm({ ...spouseForm, phone: e.target.value })}
+                  />
+                  <Input
+                    label="Նշումներ"
+                    value={spouseForm.notes}
+                    onChange={(e) => setSpouseForm({ ...spouseForm, notes: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)} className="flex-1">Չեղարկել</Button>
             <Button type="submit" loading={saving} className="flex-1">Պահպանել</Button>

@@ -175,6 +175,7 @@ export interface Guest {
   side: 'BRIDE' | 'GROOM';
   rsvp: string;
   notes?: string;
+  partnerId?: string | null;
 }
 
 export interface GuestInput {
@@ -184,6 +185,7 @@ export interface GuestInput {
   side: 'BRIDE' | 'GROOM';
   rsvp?: string;
   notes?: string;
+  spouse?: Omit<GuestInput, 'side' | 'spouse'>;
 }
 
 export interface GuestsResponse {

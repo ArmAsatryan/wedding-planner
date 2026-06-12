@@ -98,10 +98,14 @@ model Guest {
   side      GuestSide
   rsvp      RsvpStatus     @default(INVITED)
   notes     String?
+  partnerId String?        @unique
+  partner   Guest?         @relation("GuestPartners", fields: [partnerId], references: [id], onDelete: SetNull)
+  partnerOf Guest?         @relation("GuestPartners")
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   project   WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tableAssignments TableGuest[]
+
 }
 
 model Expense {

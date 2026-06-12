@@ -112,8 +112,17 @@ export function TablesPage() {
 
   const allGuestsForAuto = [...unassigned, ...tables.flatMap((t) => t.guests.map((g) => g.guest))];
   const uniqueGuests = Array.from(new Map(allGuestsForAuto.map((g) => [g.id, g])).values());
+  const guestById = new Map(uniqueGuests.map((g) => [g.id, g]));
   const brideGuests = uniqueGuests.filter((g) => g.side === 'BRIDE');
   const groomGuests = uniqueGuests.filter((g) => g.side === 'GROOM');
+
+  const formatGuestLabel = (guest: Guest) => {
+    if (guest.partnerId && guestById.has(guest.partnerId)) {
+      const partner = guestById.get(guest.partnerId)!;
+      return `${guest.firstName} ${guest.lastName} (+ ${partner.firstName})`;
+    }
+    return `${guest.firstName} ${guest.lastName}`;
+  };
 
   const selectSide = (side: 'BRIDE' | 'GROOM') => {
     const ids = uniqueGuests.filter((g) => g.side === side).map((g) => g.id);
@@ -201,7 +210,7 @@ export function TablesPage() {
                   >
                     <option value="">+ Ավելացնել հյուր</option>
                     {unassigned.map((g) => (
-                      <option key={g.id} value={g.id}>{g.firstName} {g.lastName}</option>
+                      <option key={g.id} value={g.id}>{formatGuestLabel(g)}</option>
                     ))}
                   </select>
                 )}
