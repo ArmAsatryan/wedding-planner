@@ -9,6 +9,7 @@ import tableRoutes from './routes/tables.js';
 import invitationRoutes from './routes/invitations.js';
 import scheduleRoutes from './routes/schedule.js';
 import memberRoutes from './routes/members.js';
+import publicInvitationRoutes from './routes/publicInvitations.js';
 import { EXPENSE_CATEGORY_LABELS } from './lib/constants.js';
 
 const app = express();
@@ -24,6 +25,8 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/expense-categories', (_req, res) => {
   res.json(EXPENSE_CATEGORY_LABELS);
 });
+
+app.use('/api/public/invitations', publicInvitationRoutes);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);

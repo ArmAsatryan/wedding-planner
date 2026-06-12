@@ -98,7 +98,8 @@ model Guest {
   side      GuestSide
   rsvp      RsvpStatus     @default(INVITED)
   notes     String?
-  partnerId String?        @unique
+  inviteToken String           @unique @default(cuid())
+  partnerId String?          @unique
   partner   Guest?         @relation("GuestPartners", fields: [partnerId], references: [id], onDelete: SetNull)
   partnerOf Guest?         @relation("GuestPartners")
   createdAt DateTime       @default(now())

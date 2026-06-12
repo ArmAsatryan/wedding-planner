@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { projectAccess, canEdit } from '../middleware/projectAccess.js';
 import { param } from '../utils/params.js';
+import { buildInvitationPreview } from '../lib/invitation.js';
 
 const router = Router({ mergeParams: true });
 
@@ -13,27 +14,6 @@ const templateSchema = z.object({
 });
 
 router.use(authenticate);
-
-function formatDate(date: Date) {
-  return date.toLocaleDateString('hy-AM', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
-function renderInvitation(
-  template: string,
-  guest: { firstName: string; lastName: string },
-  project: { brideName: string; groomName: string; weddingDate: Date }
-) {
-  const guestName = `${guest.firstName} ${guest.lastName}`;
-  return template
-    .replace(/\{\{guestName\}\}/g, guestName)
-    .replace(/\{\{brideName\}\}/g, project.brideName)
-    .replace(/\{\{groomName\}\}/g, project.groomName)
-    .replace(/\{\{weddingDate\}\}/g, formatDate(project.weddingDate));
-}
 
 router.get('/template', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
   const invitation = await prisma.invitationTemplate.findUnique({
@@ -62,7 +42,11 @@ router.put('/template', projectAccess('EDITOR'), async (req: AuthRequest, res) =
 async function previewInvitations(req: AuthRequest, res: import('express').Response) {
   const project = await prisma.weddingProject.findUnique({
     where: { id: param(req, 'projectId') },
-    include: { invitation: true, guests: true },
+    include: {
+      invitation: true,
+      schedule: { orderBy: [{ sortOrder: 'asc' }, { startTime: 'asc' }] },
+      guests: { include: { partner: { select: { firstName: true, lastName: true } } } },
+    },
   });
   if (!project?.invitation) return res.status(404).json({ error: 'Հրավերի կաղապար չի գտնվել' });
 
@@ -73,15 +57,9 @@ async function previewInvitations(req: AuthRequest, res: import('express').Respo
     if (!guests.length) return res.status(404).json({ error: 'Հյուրը չի գտնվել' });
   }
 
-  const previews = guests.map((guest) => ({
-    guestId: guest.id,
-    guestName: `${guest.firstName} ${guest.lastName}`,
-    content: renderInvitation(project.invitation!.template, guest, project),
-    brideName: project.brideName,
-    groomName: project.groomName,
-    weddingDate: project.weddingDate,
-    backgroundImage: project.invitation!.backgroundImage,
-  }));
+  const previews = guests.map((guest) =>
+    buildInvitationPreview(guest, project, project.invitation!, guest.partner, project.schedule)
+  );
 
   res.json({
     previews,

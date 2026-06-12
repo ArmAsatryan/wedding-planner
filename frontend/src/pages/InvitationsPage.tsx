@@ -1,43 +1,54 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Download, Eye, Upload, X, ImageIcon } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { Upload, X, ImageIcon } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
-import type { Guest, InvitationPreview } from '../lib/api';
+import type { InvitationScheduleItem } from '../lib/api';
 import { DEFAULT_INVITATION_TEMPLATE } from '../lib/constants';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
-import { Textarea, Select } from '../components/ui/Input';
+import { Textarea } from '../components/ui/Input';
 import { InvitationCard } from '../components/invitations/InvitationCard';
 
 const MAX_IMAGE_SIZE = 3 * 1024 * 1024;
 
 export function InvitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const previewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [template, setTemplate] = useState(DEFAULT_INVITATION_TEMPLATE);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-  const [guests, setGuests] = useState<Guest[]>([]);
-  const [selectedGuest, setSelectedGuest] = useState('all');
-  const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [brideName, setBrideName] = useState('...');
+  const [groomName, setGroomName] = useState('...');
+  const [weddingDate, setWeddingDate] = useState(new Date().toISOString());
+  const [schedule, setSchedule] = useState<InvitationScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
-  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
     Promise.all([
       api.invitations.getTemplate(projectId),
-      api.guests.list(projectId),
-    ]).then(([tmpl, guestRes]) => {
+      api.projects.get(projectId),
+      api.schedule.list(projectId),
+    ]).then(([tmpl, project, scheduleItems]) => {
       if (tmpl?.template) setTemplate(tmpl.template);
       if (tmpl?.backgroundImage) setBackgroundImage(tmpl.backgroundImage);
-      setGuests(guestRes.guests);
+      setBrideName(project.brideName);
+      setGroomName(project.groomName);
+      setWeddingDate(project.weddingDate);
+      setSchedule(scheduleItems);
     }).finally(() => setLoading(false));
   }, [projectId]);
+
+  const previewContent = useMemo(
+    () =>
+      template
+        .replace(/\{\{guestName\}\}/g, 'Հյուր')
+        .replace(/\{\{brideName\}\}/g, brideName)
+        .replace(/\{\{groomName\}\}/g, groomName)
+        .replace(/\{\{weddingDate\}\}/g, '...'),
+    [template, brideName, groomName]
+  );
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -62,80 +73,11 @@ export function InvitationsPage() {
     setMessage('');
     try {
       await api.invitations.updateTemplate(projectId, { template, backgroundImage });
-      setMessage('Պահպանված է');
+      setMessage('Հրավերը պահպանված է');
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : 'Սխալ է տեղի ունեցել');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handlePreview = async () => {
-    if (!projectId) return;
-    setMessage('');
-    try {
-      const guestId = selectedGuest === 'all' ? undefined : selectedGuest;
-      const res = await api.invitations.preview(projectId, guestId);
-      setPreview(res.previews[0] || null);
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : 'Սխալ է տեղի ունեցել');
-    }
-  };
-
-  const exportCanvas = async () => {
-    if (!previewRef.current) return null;
-    const element = previewRef.current;
-
-    return html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#fafaf9',
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-      windowWidth: element.offsetWidth,
-      windowHeight: element.offsetHeight,
-      onclone: (_doc, clone) => {
-        clone.style.overflow = 'visible';
-        clone.style.height = 'auto';
-      },
-    });
-  };
-
-  const downloadPDF = async () => {
-    if (!preview) return;
-    setExporting(true);
-    setMessage('');
-    try {
-      const canvas = await exportCanvas();
-      if (!canvas) throw new Error('Չհաջողվեց ստեղծել պատկերը');
-      const imgData = canvas.toDataURL('image/png');
-      const widthMm = 148;
-      const heightMm = (canvas.height * widthMm) / canvas.width;
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [widthMm, heightMm] });
-      pdf.addImage(imgData, 'PNG', 0, 0, widthMm, heightMm);
-      pdf.save(`հրավեր-${preview.guestName}.pdf`);
-    } catch {
-      setMessage('PDF արտահանման սխալ');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const downloadImage = async () => {
-    if (!preview) return;
-    setExporting(true);
-    setMessage('');
-    try {
-      const canvas = await exportCanvas();
-      if (!canvas) throw new Error('Չհաջողվեց ստեղծել պատկերը');
-      const link = document.createElement('a');
-      link.download = `հրավեր-${preview.guestName}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    } catch {
-      setMessage('PNG արտահանման սխալ');
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -151,7 +93,9 @@ export function InvitationsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-medium text-stone-900">Հրավերներ</h1>
-        <p className="text-sm text-stone-500 mt-0.5">Կազմեք և ներբեռնեք հրավերներ</p>
+        <p className="text-sm text-stone-500 mt-0.5">
+          Ստեղծեք և պահպանեք հրավերի կաղապարը։ Յուրաքանչյուր հյուրի անհատական link-ը ցուցադրվում է Հյուրեր էջում։
+        </p>
       </div>
 
       {message && (
@@ -197,7 +141,7 @@ export function InvitationsPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Տեքստ" subtitle="{{guestName}}, {{brideName}}, {{groomName}}, {{weddingDate}}" />
+            <CardHeader title="Տեքստ" subtitle="{{guestName}}, {{brideName}}, {{groomName}}, {{weddingDate}} — Ժամանականգույցը ավտոմատ է" />
             <CardBody className="space-y-3">
               <Textarea
                 label="Կաղապար"
@@ -213,56 +157,21 @@ export function InvitationsPage() {
         </div>
 
         <Card>
-          <CardHeader title="Նախադիտում" />
-          <CardBody className="space-y-4">
-            <Select label="Հյուր" value={selectedGuest} onChange={(e) => setSelectedGuest(e.target.value)}>
-              <option value="all">Բոլոր հյուրերը</option>
-              {guests.map((g) => (
-                <option key={g.id} value={g.id}>{g.firstName} {g.lastName}</option>
-              ))}
-            </Select>
-            <Button variant="secondary" size="sm" onClick={handlePreview}>
-              <Eye size={14} /> Նախադիտել
-            </Button>
-
-            {preview && (
-              <>
-                <div className="flex justify-center overflow-visible py-2">
-                  <div className="shadow-lg">
-                    <InvitationCard
-                      ref={previewRef}
-                      guestName={preview.guestName}
-                      content={preview.content}
-                      brideName={preview.brideName}
-                      groomName={preview.groomName}
-                      weddingDate={preview.weddingDate}
-                      backgroundImage={backgroundImage}
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button onClick={downloadPDF} size="sm" className="flex-1" loading={exporting}>
-                    <Download size={14} /> PDF
-                  </Button>
-                  <Button variant="secondary" onClick={downloadImage} size="sm" className="flex-1" loading={exporting}>
-                    <ImageIcon size={14} /> PNG
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {!preview && guests.length > 0 && (
-              <div className="flex justify-center opacity-60">
+          <CardHeader title="Նախադիտում" subtitle="Օրինակ՝ «Հյուր» անունով" />
+          <CardBody>
+            <div className="flex justify-center py-2">
+              <div className="shadow-lg">
                 <InvitationCard
                   guestName="Հյուր"
-                  content={template.replace(/\{\{guestName\}\}/g, 'Հյուր').replace(/\{\{brideName\}\}/g, '...').replace(/\{\{groomName\}\}/g, '...').replace(/\{\{weddingDate\}\}/g, '...')}
-                  brideName="..."
-                  groomName="..."
-                  weddingDate={new Date().toISOString()}
+                  content={previewContent}
+                  brideName={brideName}
+                  groomName={groomName}
+                  weddingDate={weddingDate}
                   backgroundImage={backgroundImage}
+                  schedule={schedule}
                 />
               </div>
-            )}
+            </div>
           </CardBody>
         </Card>
       </div>

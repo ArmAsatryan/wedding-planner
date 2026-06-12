@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Link2, Check } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import type { Guest, GuestInput } from '../lib/api';
 import { RSVP_LABELS, RSVP_COLORS, SIDE_LABELS } from '../lib/constants';
+import { getGuestInviteUrl } from '../lib/invite';
+import { formatGuestNames } from '../lib/guestNames';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
@@ -40,6 +42,7 @@ export function GuestsPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'BRIDE' | 'GROOM'>('ALL');
+  const [copiedGuestId, setCopiedGuestId] = useState<string | null>(null);
 
   const load = () => {
     if (!projectId) return;
@@ -111,6 +114,16 @@ export function GuestsPage() {
     load();
   };
 
+  const copyInviteLink = async (guest: Guest) => {
+    try {
+      await navigator.clipboard.writeText(getGuestInviteUrl(guest.inviteToken));
+      setCopiedGuestId(guest.id);
+      setTimeout(() => setCopiedGuestId(null), 2000);
+    } catch {
+      alert('Չհաջողվեց պատճենել link-ը');
+    }
+  };
+
   const filtered = guests.filter((g) => filter === 'ALL' || g.side === filter);
 
   return (
@@ -164,19 +177,58 @@ export function GuestsPage() {
                   <th className="p-4 font-medium hidden sm:table-cell">Հեռախոս</th>
                   <th className="p-4 font-medium">Կողմ</th>
                   <th className="p-4 font-medium">RSVP</th>
+                  <th className="p-4 font-medium">Հրավերի հղում</th>
                   <th className="p-4 font-medium text-right">Գործողություն</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((guest) => (
                   <tr key={guest.id} className="border-b border-rose-50 hover:bg-rose-50/50">
-                    <td className="p-4 font-medium text-rose-900">{guest.firstName} {guest.lastName}</td>
+                    <td className="p-4 font-medium text-rose-900">
+                      {formatGuestNames(guest, guest.partner)}
+                      {guest.partner && (
+                        <span className="ml-2 text-xs font-normal text-rose-400">(զույգ)</span>
+                      )}
+                    </td>
                     <td className="p-4 text-rose-600 hidden sm:table-cell">{guest.phone || '—'}</td>
                     <td className="p-4 text-rose-600">{SIDE_LABELS[guest.side]}</td>
                     <td className="p-4">
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${RSVP_COLORS[guest.rsvp]}`}>
                         {RSVP_LABELS[guest.rsvp]}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      {guest.inviteToken ? (
+                        <div className="flex flex-col gap-1.5 max-w-[240px]">
+                          <a
+                            href={getGuestInviteUrl(guest.inviteToken)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-rose-600 hover:text-rose-800 hover:underline break-all leading-relaxed"
+                          >
+                            {getGuestInviteUrl(guest.inviteToken)}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => copyInviteLink(guest)}
+                            className="inline-flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 w-fit"
+                          >
+                            {copiedGuestId === guest.id ? (
+                              <>
+                                <Check size={12} />
+                                Պատճենված է
+                              </>
+                            ) : (
+                              <>
+                                <Link2 size={12} />
+                                Պատճենել link-ը
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-rose-400">—</span>
+                      )}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end gap-1">

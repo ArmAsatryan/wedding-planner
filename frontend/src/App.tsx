@@ -9,6 +9,7 @@ import { GuestsPage } from './pages/GuestsPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { TablesPage } from './pages/TablesPage';
 import { InvitationsPage } from './pages/InvitationsPage';
+import { PublicInvitationPage } from './pages/PublicInvitationPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { SettingsPage } from './pages/SettingsPage';
 
@@ -43,6 +44,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          <Route path="/invite/:token" element={<PublicInvitationPage />} />
           <Route path="/projects" element={<PrivateRoute><ProjectsPage /></PrivateRoute>} />
           <Route
             path="/projects/:projectId"

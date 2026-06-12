@@ -33,6 +33,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+async function publicRequest<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: 'Սխալ է տեղի ունեցել' }));
+    throw new ApiError(data.error || 'Սխալ է տեղի ունեցել', res.status);
+  }
+  return res.json();
+}
+
+export const publicApi = {
+  invitation: (token: string) => publicRequest<InvitationPreview>(`/public/invitations/${token}`),
+};
+
 export const api = {
   auth: {
     register: (data: { email: string; password: string; name: string }) =>
@@ -167,6 +180,12 @@ export interface DashboardData {
   summary: ProjectSummary;
 }
 
+export interface GuestPartner {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface Guest {
   id: string;
   firstName: string;
@@ -176,6 +195,8 @@ export interface Guest {
   rsvp: string;
   notes?: string;
   partnerId?: string | null;
+  partner?: GuestPartner | null;
+  inviteToken: string;
 }
 
 export interface GuestInput {
@@ -242,11 +263,25 @@ export interface InvitationTemplate {
 export interface InvitationPreview {
   guestId: string;
   guestName: string;
+  partnerName?: string | null;
+  inviteToken?: string;
   content: string;
   brideName: string;
   groomName: string;
   weddingDate: string;
   backgroundImage?: string | null;
+  schedule?: InvitationScheduleItem[];
+}
+
+export interface InvitationScheduleItem {
+  title: string;
+  startTime: string;
+  endTime?: string | null;
+  locationName: string;
+  address: string;
+  mapLink?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface InvitationPreviewResponse {

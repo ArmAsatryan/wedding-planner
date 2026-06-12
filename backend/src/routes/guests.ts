@@ -33,7 +33,10 @@ router.use(authenticate);
 router.get('/', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
   const guests = await prisma.guest.findMany({
     where: { projectId: param(req, 'projectId') },
-    include: { tableAssignments: { include: { table: true } } },
+    include: {
+      tableAssignments: { include: { table: true } },
+      partner: { select: { id: true, firstName: true, lastName: true } },
+    },
     orderBy: [{ side: 'asc' }, { lastName: 'asc' }],
   });
 
