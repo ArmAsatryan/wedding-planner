@@ -131,38 +131,59 @@ router.post('/auto-distribute', projectAccess('EDITOR'), async (req: AuthRequest
   const parsed = autoDistributeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
-  const { guestIds, peoplePerTable, tableNamePrefix = 'Սեղան' } = parsed.data;
+  const { guestIds, peoplePerTable } = parsed.data;
   const projectId = param(req, 'projectId');
+
+  const guests = await prisma.guest.findMany({
+    where: { id: { in: guestIds }, projectId },
+    select: { id: true, side: true },
+  });
+
+  if (guests.length !== guestIds.length) {
+    return res.status(400).json({ error: 'Որոշ հյուրեր չեն գտնվել' });
+  }
 
   await prisma.tableGuest.deleteMany({
     where: { guestId: { in: guestIds } },
   });
 
-  const chunks: string[][] = [];
-  for (let i = 0; i < guestIds.length; i += peoplePerTable) {
-    chunks.push(guestIds.slice(i, i + peoplePerTable));
-  }
+  const sideGroups = [
+    { side: 'BRIDE' as const, prefix: 'Հարսի սեղան', ids: guests.filter((g) => g.side === 'BRIDE').map((g) => g.id) },
+    { side: 'GROOM' as const, prefix: 'Փեսայի սեղան', ids: guests.filter((g) => g.side === 'GROOM').map((g) => g.id) },
+  ];
 
   const createdTables = [];
-  for (let i = 0; i < chunks.length; i++) {
-    const table = await prisma.seatingTable.create({
-      data: {
-        projectId,
-        name: `${tableNamePrefix} ${i + 1}`,
-        capacity: peoplePerTable,
-      },
-    });
-    for (const guestId of chunks[i]) {
-      await prisma.tableGuest.create({ data: { tableId: table.id, guestId } });
+  for (const group of sideGroups) {
+    if (group.ids.length === 0) continue;
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < group.ids.length; i += peoplePerTable) {
+      chunks.push(group.ids.slice(i, i + peoplePerTable));
     }
-    const full = await prisma.seatingTable.findUnique({
-      where: { id: table.id },
-      include: { guests: { include: { guest: true } } },
-    });
-    createdTables.push(full);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const table = await prisma.seatingTable.create({
+        data: {
+          projectId,
+          name: `${group.prefix} ${i + 1}`,
+          capacity: Math.max(peoplePerTable, chunks[i].length),
+        },
+      });
+      for (const guestId of chunks[i]) {
+        await prisma.tableGuest.create({ data: { tableId: table.id, guestId } });
+      }
+      const full = await prisma.seatingTable.findUnique({
+        where: { id: table.id },
+        include: { guests: { include: { guest: true } } },
+      });
+      createdTables.push(full);
+    }
   }
 
-  res.status(201).json({ tables: createdTables, message: `${chunks.length} սեղան ստեղծված է` });
+  res.status(201).json({
+    tables: createdTables,
+    message: `${createdTables.length} սեղան ստեղծված է (հարսի և փեսայի կողմերով առանձ)` ,
+  });
 });
 
 export default router;

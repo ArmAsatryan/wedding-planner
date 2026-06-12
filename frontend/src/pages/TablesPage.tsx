@@ -9,6 +9,7 @@ import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
 import { StatCard } from '../components/ui/StatCard';
+import { SIDE_LABELS } from '../lib/constants';
 
 export function TablesPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -111,6 +112,17 @@ export function TablesPage() {
 
   const allGuestsForAuto = [...unassigned, ...tables.flatMap((t) => t.guests.map((g) => g.guest))];
   const uniqueGuests = Array.from(new Map(allGuestsForAuto.map((g) => [g.id, g])).values());
+  const brideGuests = uniqueGuests.filter((g) => g.side === 'BRIDE');
+  const groomGuests = uniqueGuests.filter((g) => g.side === 'GROOM');
+
+  const selectSide = (side: 'BRIDE' | 'GROOM') => {
+    const ids = uniqueGuests.filter((g) => g.side === side).map((g) => g.id);
+    setSelectedGuests((prev) => {
+      const others = prev.filter((id) => !ids.includes(id));
+      const allSelected = ids.every((id) => prev.includes(id));
+      return allSelected ? others : [...others, ...ids];
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -234,22 +246,47 @@ export function TablesPage() {
       <Modal open={autoModal} onClose={() => setAutoModal(false)} title="Ավտոմատ բաշխում" size="lg">
         <form onSubmit={handleAutoDistribute} className="space-y-4">
           {error && <div className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</div>}
+          <p className="text-sm text-rose-500 mb-3">
+            Հյուրերը բաշխվում են առանձին՝ հարսի և փեսայի կողմերով
+          </p>
           <Input label="Մարդ սեղանին" type="number" min="1" value={peoplePerTable} onChange={(e) => setPeoplePerTable(Number(e.target.value))} required />
-          <div>
-            <p className="text-sm font-medium text-rose-800 mb-2">Ընտրեք հյուրեր</p>
-            <div className="max-h-48 overflow-y-auto space-y-1 border border-rose-100 rounded-xl p-3">
-              {uniqueGuests.map((g) => (
-                <label key={g.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-rose-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedGuests.includes(g.id)}
-                    onChange={() => toggleGuest(g.id)}
-                    className="rounded border-rose-300 text-rose-600"
-                  />
-                  <span className="text-sm text-rose-800">{g.firstName} {g.lastName}</span>
-                </label>
-              ))}
-            </div>
+          <div className="space-y-4">
+            {([
+              { side: 'BRIDE' as const, guests: brideGuests },
+              { side: 'GROOM' as const, guests: groomGuests },
+            ]).map(({ side, guests }) => (
+              <div key={side}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-rose-800">{SIDE_LABELS[side]}</p>
+                  {guests.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => selectSide(side)}
+                      className="text-xs text-rose-600 hover:underline"
+                    >
+                      {guests.every((g) => selectedGuests.includes(g.id)) ? 'Չեղարկել' : 'Ընտրել բոլորը'}
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-rose-100 rounded-xl p-3">
+                  {guests.length === 0 ? (
+                    <p className="text-sm text-rose-400 text-center py-2">Հյուրեր չկան</p>
+                  ) : (
+                    guests.map((g) => (
+                      <label key={g.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-rose-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedGuests.includes(g.id)}
+                          onChange={() => toggleGuest(g.id)}
+                          className="rounded border-rose-300 text-rose-600"
+                        />
+                        <span className="text-sm text-rose-800">{g.firstName} {g.lastName}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={() => setAutoModal(false)} className="flex-1">Չեղարկել</Button>

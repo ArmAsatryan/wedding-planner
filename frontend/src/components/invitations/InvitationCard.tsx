@@ -17,7 +17,7 @@ export const InvitationCard = forwardRef<HTMLDivElement, InvitationCardProps>(
     return (
       <div
         ref={ref}
-        className="relative overflow-hidden rounded-sm aspect-[3/4] min-h-[480px] flex flex-col"
+        className="relative rounded-sm w-[360px] min-h-[560px] flex flex-col invitation-card"
         style={{
           fontFamily: 'Noto Serif Armenian, serif',
           backgroundColor: hasBg ? undefined : '#fafaf9',
@@ -36,7 +36,7 @@ export const InvitationCard = forwardRef<HTMLDivElement, InvitationCardProps>(
         )}
 
         <div className="relative z-10 flex flex-col flex-1 p-10 text-center">
-          <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center">
             <p
               className={`text-[10px] tracking-[0.35em] uppercase mb-6 ${
                 hasBg ? 'text-white/80' : 'text-stone-400'

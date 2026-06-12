@@ -25,6 +25,7 @@ export function InvitationsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -83,33 +84,59 @@ export function InvitationsPage() {
 
   const exportCanvas = async () => {
     if (!previewRef.current) return null;
-    return html2canvas(previewRef.current, {
+    const element = previewRef.current;
+
+    return html2canvas(element, {
       scale: 2,
       useCORS: true,
-      backgroundColor: null,
+      backgroundColor: '#fafaf9',
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+      windowWidth: element.offsetWidth,
+      windowHeight: element.offsetHeight,
+      onclone: (_doc, clone) => {
+        clone.style.overflow = 'visible';
+        clone.style.height = 'auto';
+      },
     });
   };
 
   const downloadPDF = async () => {
     if (!preview) return;
-    const canvas = await exportCanvas();
-    if (!canvas) return;
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
-    const width = pdf.internal.pageSize.getWidth();
-    const height = (canvas.height * width) / canvas.width;
-    pdf.addImage(imgData, 'PNG', 0, 0, width, height);
-    pdf.save(`հրավեր-${preview.guestName}.pdf`);
+    setExporting(true);
+    setMessage('');
+    try {
+      const canvas = await exportCanvas();
+      if (!canvas) throw new Error('Չհաջողվեց ստեղծել պատկերը');
+      const imgData = canvas.toDataURL('image/png');
+      const widthMm = 148;
+      const heightMm = (canvas.height * widthMm) / canvas.width;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [widthMm, heightMm] });
+      pdf.addImage(imgData, 'PNG', 0, 0, widthMm, heightMm);
+      pdf.save(`հրավեր-${preview.guestName}.pdf`);
+    } catch {
+      setMessage('PDF արտահանման սխալ');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const downloadImage = async () => {
     if (!preview) return;
-    const canvas = await exportCanvas();
-    if (!canvas) return;
-    const link = document.createElement('a');
-    link.download = `հրավեր-${preview.guestName}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    setExporting(true);
+    setMessage('');
+    try {
+      const canvas = await exportCanvas();
+      if (!canvas) throw new Error('Չհաջողվեց ստեղծել պատկերը');
+      const link = document.createElement('a');
+      link.download = `հրավեր-${preview.guestName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch {
+      setMessage('PNG արտահանման սխալ');
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -200,22 +227,24 @@ export function InvitationsPage() {
 
             {preview && (
               <>
-                <div className="max-w-sm mx-auto shadow-lg">
-                  <InvitationCard
-                    ref={previewRef}
-                    guestName={preview.guestName}
-                    content={preview.content}
-                    brideName={preview.brideName}
-                    groomName={preview.groomName}
-                    weddingDate={preview.weddingDate}
-                    backgroundImage={backgroundImage}
-                  />
+                <div className="flex justify-center overflow-visible py-2">
+                  <div className="shadow-lg">
+                    <InvitationCard
+                      ref={previewRef}
+                      guestName={preview.guestName}
+                      content={preview.content}
+                      brideName={preview.brideName}
+                      groomName={preview.groomName}
+                      weddingDate={preview.weddingDate}
+                      backgroundImage={backgroundImage}
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={downloadPDF} size="sm" className="flex-1">
+                  <Button onClick={downloadPDF} size="sm" className="flex-1" loading={exporting}>
                     <Download size={14} /> PDF
                   </Button>
-                  <Button variant="secondary" onClick={downloadImage} size="sm" className="flex-1">
+                  <Button variant="secondary" onClick={downloadImage} size="sm" className="flex-1" loading={exporting}>
                     <ImageIcon size={14} /> PNG
                   </Button>
                 </div>
@@ -223,7 +252,7 @@ export function InvitationsPage() {
             )}
 
             {!preview && guests.length > 0 && (
-              <div className="max-w-sm mx-auto opacity-60">
+              <div className="flex justify-center opacity-60">
                 <InvitationCard
                   guestName="Հյուր"
                   content={template.replace(/\{\{guestName\}\}/g, 'Հյուր').replace(/\{\{brideName\}\}/g, '...').replace(/\{\{groomName\}\}/g, '...').replace(/\{\{weddingDate\}\}/g, '...')}
