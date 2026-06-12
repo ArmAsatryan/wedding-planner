@@ -5,7 +5,7 @@ import { api, ApiError } from '../lib/api';
 import type { Guest, GuestInput } from '../lib/api';
 import { RSVP_LABELS, RSVP_COLORS, SIDE_LABELS } from '../lib/constants';
 import { getGuestInviteUrl } from '../lib/invite';
-import { formatGuestNames } from '../lib/guestNames';
+import { formatGuestFullName, formatGuestNames, getInviteGuest } from '../lib/guestNames';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
@@ -29,6 +29,11 @@ const emptySpouse = {
   notes: '',
 };
 
+const emptyFamilyMember = {
+  firstName: '',
+  lastName: '',
+};
+
 export function GuestsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -39,6 +44,8 @@ export function GuestsPage() {
   const [form, setForm] = useState<GuestInput>(emptyForm);
   const [addSpouse, setAddSpouse] = useState(false);
   const [spouseForm, setSpouseForm] = useState(emptySpouse);
+  const [addFamily, setAddFamily] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState([{ ...emptyFamilyMember }]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'BRIDE' | 'GROOM'>('ALL');
@@ -60,6 +67,8 @@ export function GuestsPage() {
     setForm(emptyForm);
     setAddSpouse(false);
     setSpouseForm(emptySpouse);
+    setAddFamily(false);
+    setFamilyMembers([{ ...emptyFamilyMember }]);
     setError('');
     setModalOpen(true);
   };
@@ -91,11 +100,19 @@ export function GuestsPage() {
         if (addSpouse) {
           payload.spouse = {
             firstName: spouseForm.firstName,
-            lastName: spouseForm.lastName,
+            lastName: spouseForm.lastName || undefined,
             phone: spouseForm.phone || undefined,
             rsvp: form.rsvp,
             notes: spouseForm.notes || undefined,
           };
+        }
+        if (addFamily) {
+          payload.familyMembers = familyMembers
+            .filter((member) => member.firstName.trim())
+            .map((member) => ({
+              firstName: member.firstName.trim(),
+              lastName: member.lastName.trim() || undefined,
+            }));
         }
         await api.guests.create(projectId, payload);
       }
@@ -109,14 +126,14 @@ export function GuestsPage() {
   };
 
   const handleDelete = async (guest: Guest) => {
-    if (!projectId || !confirm(`Ջնջե՞լ ${guest.firstName} ${guest.lastName}-ին`)) return;
+    if (!projectId || !confirm(`Ջնջե՞լ ${formatGuestFullName(guest)}-ին`)) return;
     await api.guests.delete(projectId, guest.id);
     load();
   };
 
   const copyInviteLink = async (guest: Guest) => {
     try {
-      await navigator.clipboard.writeText(getGuestInviteUrl(guest.inviteToken));
+      await navigator.clipboard.writeText(getGuestInviteUrl(inviteGuest.inviteToken));
       setCopiedGuestId(guest.id);
       setTimeout(() => setCopiedGuestId(null), 2000);
     } catch {
@@ -125,6 +142,7 @@ export function GuestsPage() {
   };
 
   const filtered = guests.filter((g) => filter === 'ALL' || g.side === filter);
+  const guestById = new Map(guests.map((guest) => [guest.id, guest]));
 
   return (
     <div className="space-y-6">
@@ -182,12 +200,26 @@ export function GuestsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((guest) => (
+                {filtered.map((guest) => {
+                  const inviteGuest = getInviteGuest(guest, guestById);
+                  const displayName = guest.parentId
+                    ? formatGuestFullName(guest)
+                    : formatGuestNames(guest, guest.partner, guest.children);
+
+                  return (
                   <tr key={guest.id} className="border-b border-rose-50 hover:bg-rose-50/50">
                     <td className="p-4 font-medium text-rose-900">
-                      {formatGuestNames(guest, guest.partner)}
-                      {guest.partner && (
+                      {displayName}
+                      {guest.partner && !guest.parentId && (
                         <span className="ml-2 text-xs font-normal text-rose-400">(զույգ)</span>
+                      )}
+                      {guest.parentId && (
+                        <span className="ml-2 text-xs font-normal text-rose-400">(երեխա)</span>
+                      )}
+                      {!!guest.children?.length && (
+                        <span className="ml-2 text-xs font-normal text-rose-400">
+                          (ընտանիք · {guest.children.length})
+                        </span>
                       )}
                     </td>
                     <td className="p-4 text-rose-600 hidden sm:table-cell">{guest.phone || '—'}</td>
@@ -198,19 +230,19 @@ export function GuestsPage() {
                       </span>
                     </td>
                     <td className="p-4">
-                      {guest.inviteToken ? (
+                      {inviteGuest?.inviteToken ? (
                         <div className="flex flex-col gap-1.5 max-w-[240px]">
                           <a
-                            href={getGuestInviteUrl(guest.inviteToken)}
+                            href={getGuestInviteUrl(inviteGuest.inviteToken)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-rose-600 hover:text-rose-800 hover:underline break-all leading-relaxed"
                           >
-                            {getGuestInviteUrl(guest.inviteToken)}
+                            {getGuestInviteUrl(inviteGuest.inviteToken)}
                           </a>
                           <button
                             type="button"
-                            onClick={() => copyInviteLink(guest)}
+                            onClick={() => copyInviteLink(inviteGuest)}
                             className="inline-flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 w-fit"
                           >
                             {copiedGuestId === guest.id ? (
@@ -241,7 +273,8 @@ export function GuestsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -253,7 +286,7 @@ export function GuestsPage() {
           {error && <div className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</div>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Անուն" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
-            <Input label="Ազգանուն" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
+            <Input label="Ազգանուն" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
           </div>
           <Input label="Հեռախոս" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <Select label="Կողմ" value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value as 'BRIDE' | 'GROOM' })}>
@@ -293,7 +326,6 @@ export function GuestsPage() {
                       label="Ազգանուն"
                       value={spouseForm.lastName}
                       onChange={(e) => setSpouseForm({ ...spouseForm, lastName: e.target.value })}
-                      required={addSpouse}
                     />
                   </div>
                   <Input
@@ -306,6 +338,66 @@ export function GuestsPage() {
                     value={spouseForm.notes}
                     onChange={(e) => setSpouseForm({ ...spouseForm, notes: e.target.value })}
                   />
+                </div>
+              )}
+            </div>
+          )}
+
+          {!editing && (
+            <div className="space-y-3 rounded-xl border border-rose-100 p-4 bg-rose-50/50">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addFamily}
+                  onChange={(e) => setAddFamily(e.target.checked)}
+                  className="rounded border-rose-300 text-rose-600"
+                />
+                <span className="text-sm font-medium text-rose-800">Ավելացնել ընտանիք (երեխաներ)</span>
+              </label>
+
+              {addFamily && (
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs text-rose-500">Երեխաների համար բավական է միայն անունը</p>
+                  {familyMembers.map((member, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                      <Input
+                        label={index === 0 ? 'Երեխայի անուն' : `Երեխա ${index + 1}`}
+                        value={member.firstName}
+                        onChange={(e) => {
+                          const next = [...familyMembers];
+                          next[index] = { ...next[index], firstName: e.target.value };
+                          setFamilyMembers(next);
+                        }}
+                        required={addFamily && index === 0}
+                      />
+                      <Input
+                        label="Ազգանուն"
+                        value={member.lastName}
+                        onChange={(e) => {
+                          const next = [...familyMembers];
+                          next[index] = { ...next[index], lastName: e.target.value };
+                          setFamilyMembers(next);
+                        }}
+                      />
+                      {familyMembers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setFamilyMembers(familyMembers.filter((_, i) => i !== index))}
+                          className="mb-2 p-2 rounded-lg hover:bg-rose-100 text-rose-500"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setFamilyMembers([...familyMembers, { ...emptyFamilyMember }])}
+                  >
+                    <Plus size={14} /> Ավելացնել երեխա
+                  </Button>
                 </div>
               )}
             </div>

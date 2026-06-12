@@ -12,13 +12,23 @@ export type InvitationScheduleItem = {
 };
 
 export function formatGuestFullName(guest: GuestName) {
-  return `${guest.firstName} ${guest.lastName}`;
+  return [guest.firstName, guest.lastName].filter(Boolean).join(' ').trim();
 }
 
-export function formatGuestNames(guest: GuestName, partner?: GuestName | null) {
-  const primary = formatGuestFullName(guest);
-  if (!partner) return primary;
-  return `${primary} և ${formatGuestFullName(partner)}`;
+export function formatGuestNames(
+  guest: GuestName,
+  partner?: GuestName | null,
+  familyMembers: GuestName[] = []
+) {
+  const names = [formatGuestFullName(guest)];
+  if (partner) names.push(formatGuestFullName(partner));
+  for (const member of familyMembers) {
+    names.push(formatGuestFullName(member));
+  }
+
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} և ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')} և ${names[names.length - 1]}`;
 }
 
 export function formatInvitationDate(date: Date) {
@@ -75,9 +85,10 @@ export function renderInvitation(
   guest: GuestName,
   project: { brideName: string; groomName: string; weddingDate: Date },
   partner?: GuestName | null,
-  schedule: InvitationScheduleItem[] = []
+  schedule: InvitationScheduleItem[] = [],
+  familyMembers: GuestName[] = []
 ) {
-  const guestName = formatGuestNames(guest, partner);
+  const guestName = formatGuestNames(guest, partner, familyMembers);
   const scheduleText = formatScheduleText(schedule);
 
   return template
@@ -93,15 +104,16 @@ export function buildInvitationPreview(
   project: { brideName: string; groomName: string; weddingDate: Date },
   invitation: { template: string; backgroundImage: string | null },
   partner?: GuestName | null,
-  schedule: InvitationScheduleItem[] = []
+  schedule: InvitationScheduleItem[] = [],
+  familyMembers: GuestName[] = []
 ) {
-  const guestName = formatGuestNames(guest, partner);
+  const guestName = formatGuestNames(guest, partner, familyMembers);
   return {
     guestId: guest.id,
     guestName,
     partnerName: partner ? formatGuestFullName(partner) : null,
     inviteToken: guest.inviteToken,
-    content: renderInvitation(invitation.template, guest, project, partner, schedule),
+    content: renderInvitation(invitation.template, guest, project, partner, schedule, familyMembers),
     brideName: project.brideName,
     groomName: project.groomName,
     weddingDate: project.weddingDate,

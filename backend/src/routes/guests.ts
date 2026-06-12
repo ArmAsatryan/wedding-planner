@@ -7,9 +7,11 @@ import { param } from '../utils/params.js';
 
 const router = Router({ mergeParams: true });
 
+const optionalName = z.string().optional().transform((value) => value?.trim() ?? '');
+
 const guestSchema = z.object({
-  firstName: z.string().min(1, 'Անունը պարտադիր է'),
-  lastName: z.string().min(1, 'Ազգանունը պարտադիր է'),
+  firstName: z.string().trim().min(1, 'Անունը պարտադիր է'),
+  lastName: optionalName,
   phone: z.string().optional(),
   side: z.enum(['BRIDE', 'GROOM']),
   rsvp: z.enum(['INVITED', 'CONFIRMED', 'DECLINED', 'PENDING']).optional(),
@@ -17,27 +19,41 @@ const guestSchema = z.object({
 });
 
 const spouseSchema = z.object({
-  firstName: z.string().min(1, 'Ամուսնու/կնոջի անունը պարտադիր է'),
-  lastName: z.string().min(1, 'Ամուսնու/կնոջի ազգանունը պարտադիր է'),
+  firstName: z.string().trim().min(1, 'Ամուսնու/կնոջի անունը պարտադիր է'),
+  lastName: optionalName,
   phone: z.string().optional(),
   rsvp: z.enum(['INVITED', 'CONFIRMED', 'DECLINED', 'PENDING']).optional(),
   notes: z.string().optional(),
 });
 
+const familyMemberSchema = z.object({
+  firstName: z.string().trim().min(1, 'Ընտանիքի անդամի անունը պարտադիր է'),
+  lastName: optionalName,
+  notes: z.string().optional(),
+});
+
 const createGuestSchema = guestSchema.extend({
   spouse: spouseSchema.optional(),
+  familyMembers: z.array(familyMemberSchema).optional(),
 });
+
+const guestInclude = {
+  tableAssignments: { include: { table: true } },
+  partner: { select: { id: true, firstName: true, lastName: true } },
+  parent: { select: { id: true, firstName: true, lastName: true, inviteToken: true } },
+  children: {
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: { firstName: 'asc' as const },
+  },
+};
 
 router.use(authenticate);
 
 router.get('/', projectAccess('VIEWER'), async (req: AuthRequest, res) => {
   const guests = await prisma.guest.findMany({
     where: { projectId: param(req, 'projectId') },
-    include: {
-      tableAssignments: { include: { table: true } },
-      partner: { select: { id: true, firstName: true, lastName: true } },
-    },
-    orderBy: [{ side: 'asc' }, { lastName: 'asc' }],
+    include: guestInclude,
+    orderBy: [{ side: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }],
   });
 
   const brideCount = guests.filter((g) => g.side === 'BRIDE').length;
@@ -52,35 +68,59 @@ router.post('/', projectAccess('EDITOR'), async (req: AuthRequest, res) => {
   const parsed = createGuestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
-  const { spouse, ...guestData } = parsed.data;
+  const { spouse, familyMembers = [], ...guestData } = parsed.data;
   const projectId = param(req, 'projectId');
 
-  if (!spouse) {
+  if (!spouse && familyMembers.length === 0) {
     const guest = await prisma.guest.create({
       data: { ...guestData, projectId },
     });
     return res.status(201).json({ guest });
   }
 
-  const [guest, spouseGuest] = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const createdGuest = await tx.guest.create({ data: { ...guestData, projectId } });
-    const createdSpouse = await tx.guest.create({
-      data: {
-        ...spouse,
-        side: guestData.side,
-        rsvp: spouse.rsvp ?? guestData.rsvp,
-        partnerId: createdGuest.id,
-        projectId,
-      },
-    });
-    const linkedGuest = await tx.guest.update({
+    let spouseGuest = null;
+
+    if (spouse) {
+      spouseGuest = await tx.guest.create({
+        data: {
+          ...spouse,
+          side: guestData.side,
+          rsvp: spouse.rsvp ?? guestData.rsvp,
+          partnerId: createdGuest.id,
+          projectId,
+        },
+      });
+      await tx.guest.update({
+        where: { id: createdGuest.id },
+        data: { partnerId: spouseGuest.id },
+      });
+    }
+
+    const createdFamilyMembers = [];
+    for (const member of familyMembers) {
+      const child = await tx.guest.create({
+        data: {
+          ...member,
+          side: guestData.side,
+          rsvp: guestData.rsvp,
+          parentId: createdGuest.id,
+          projectId,
+        },
+      });
+      createdFamilyMembers.push(child);
+    }
+
+    const guest = await tx.guest.findUniqueOrThrow({
       where: { id: createdGuest.id },
-      data: { partnerId: createdSpouse.id },
+      include: guestInclude,
     });
-    return [linkedGuest, createdSpouse] as const;
+
+    return { guest, spouse: spouseGuest, familyMembers: createdFamilyMembers };
   });
 
-  res.status(201).json({ guest, spouse: spouseGuest });
+  res.status(201).json(result);
 });
 
 router.put('/:guestId', projectAccess('EDITOR'), async (req: AuthRequest, res) => {

@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { projectAccess, canEdit } from '../middleware/projectAccess.js';
 import { param } from '../utils/params.js';
 import { buildInvitationPreview } from '../lib/invitation.js';
+import { loadGuestHouseholdById } from '../lib/household.js';
 
 const router = Router({ mergeParams: true });
 
@@ -45,7 +46,12 @@ async function previewInvitations(req: AuthRequest, res: import('express').Respo
     include: {
       invitation: true,
       schedule: { orderBy: [{ sortOrder: 'asc' }, { startTime: 'asc' }] },
-      guests: { include: { partner: { select: { firstName: true, lastName: true } } } },
+      guests: {
+        include: {
+          partner: { select: { firstName: true, lastName: true } },
+          children: { select: { firstName: true, lastName: true }, orderBy: { firstName: 'asc' } },
+        },
+      },
     },
   });
   if (!project?.invitation) return res.status(404).json({ error: 'Հրավերի կաղապար չի գտնվել' });
@@ -57,12 +63,23 @@ async function previewInvitations(req: AuthRequest, res: import('express').Respo
     if (!guests.length) return res.status(404).json({ error: 'Հյուրը չի գտնվել' });
   }
 
-  const previews = guests.map((guest) =>
-    buildInvitationPreview(guest, project, project.invitation!, guest.partner, project.schedule)
+  const previews = await Promise.all(
+    guests.map(async (guest) => {
+      const household = await loadGuestHouseholdById(guest.id);
+      if (!household) return null;
+      return buildInvitationPreview(
+        { ...household.primary, inviteToken: guest.inviteToken },
+        project,
+        project.invitation!,
+        household.partner,
+        project.schedule,
+        household.children
+      );
+    })
   );
 
   res.json({
-    previews,
+    previews: previews.filter(Boolean),
     template: project.invitation.template,
     backgroundImage: project.invitation.backgroundImage,
   });

@@ -93,7 +93,7 @@ model Guest {
   id        String         @id @default(cuid())
   projectId String
   firstName String
-  lastName  String
+  lastName  String         @default("")
   phone     String?
   side      GuestSide
   rsvp      RsvpStatus     @default(INVITED)
@@ -102,6 +102,9 @@ model Guest {
   partnerId String?          @unique
   partner   Guest?         @relation("GuestPartners", fields: [partnerId], references: [id], onDelete: SetNull)
   partnerOf Guest?         @relation("GuestPartners")
+  parentId  String?
+  parent    Guest?         @relation("GuestFamily", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Guest[]        @relation("GuestFamily")
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   project   WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)

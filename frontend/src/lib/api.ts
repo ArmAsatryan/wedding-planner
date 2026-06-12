@@ -186,6 +186,12 @@ export interface GuestPartner {
   lastName: string;
 }
 
+export interface GuestFamilyMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface Guest {
   id: string;
   firstName: string;
@@ -196,17 +202,27 @@ export interface Guest {
   notes?: string;
   partnerId?: string | null;
   partner?: GuestPartner | null;
+  parentId?: string | null;
+  parent?: (GuestPartner & { inviteToken: string }) | null;
+  children?: GuestFamilyMember[];
   inviteToken: string;
+}
+
+export interface FamilyMemberInput {
+  firstName: string;
+  lastName?: string;
+  notes?: string;
 }
 
 export interface GuestInput {
   firstName: string;
-  lastName: string;
+  lastName?: string;
   phone?: string;
   side: 'BRIDE' | 'GROOM';
   rsvp?: string;
   notes?: string;
-  spouse?: Omit<GuestInput, 'side' | 'spouse'>;
+  spouse?: Omit<GuestInput, 'side' | 'spouse' | 'familyMembers'>;
+  familyMembers?: FamilyMemberInput[];
 }
 
 export interface GuestsResponse {
