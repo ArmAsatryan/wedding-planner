@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MemberRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum GuestSide {
+  BRIDE
+  GROOM
+}
+
+enum RsvpStatus {
+  INVITED
+  CONFIRMED
+  DECLINED
+  PENDING
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+}
+
+enum ExpenseCategory {
+  RESTAURANT_VENUE
+  DJ
+  PHOTOGRAPHER
+  VIDEOGRAPHER
+  FLOWERS
+  WEDDING_DRESS
+  GROOM_SUIT
+  RINGS
+  INVITATIONS
+  TAROSIK
+  FURSHET
+  CAKE
+  DECORATION
+  TRANSPORT
+  OTHER
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  ownedProjects WeddingProject[] @relation("ProjectOwner")
+  memberships  ProjectMember[]
+}
+
+model WeddingProject {
+  id          String              @id @default(cuid())
+  brideName   String
+  groomName   String
+  weddingDate DateTime
+  totalBudget Decimal             @db.Decimal(12, 2)
+  ownerId     String
+  owner       User                @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  members     ProjectMember[]
+  guests      Guest[]
+  expenses    Expense[]
+  tables      SeatingTable[]
+  invitation  InvitationTemplate?
+  schedule    ScheduleItem[]
+}
+
+model ProjectMember {
+  id        String         @id @default(cuid())
+  projectId String
+  userId    String
+  role      MemberRole     @default(EDITOR)
+  invitedAt DateTime       @default(now())
+  project   WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model Guest {
+  id        String         @id @default(cuid())
+  projectId String
+  firstName String
+  lastName  String
+  phone     String?
+  side      GuestSide
+  rsvp      RsvpStatus     @default(INVITED)
+  notes     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  project   WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tableAssignments TableGuest[]
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  projectId   String
+  name        String
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(12, 2)
+  paymentStatus PaymentStatus @default(UNPAID)
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  project     WeddingProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model SeatingTable {
+  id        String         @id @default(cuid())
+  projectId String
+  name      String
+  capacity  Int
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  project   WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  guests    TableGuest[]
+}
+
+model TableGuest {
+  id      String       @id @default(cuid())
+  tableId String
+  guestId String
+  table   SeatingTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  guest   Guest        @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, guestId])
+  @@unique([guestId])
+}
+
+model InvitationTemplate {
+  id              String         @id @default(cuid())
+  projectId       String         @unique
+  template        String
+  backgroundImage String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  project         WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleItem {
+  id          String         @id @default(cuid())
+  projectId   String
+  title       String
+  startTime   DateTime
+  endTime     DateTime?
+  locationName String
+  address     String
+  description String?
+  mapLink     String?
+  latitude    Float?
+  longitude   Float?
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  project     WeddingProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
