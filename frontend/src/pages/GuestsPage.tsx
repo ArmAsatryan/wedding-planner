@@ -133,7 +133,7 @@ export function GuestsPage() {
 
   const copyInviteLink = async (guest: Guest) => {
     try {
-      await navigator.clipboard.writeText(getGuestInviteUrl(inviteGuest.inviteToken));
+      await navigator.clipboard.writeText(getGuestInviteUrl(guest.inviteToken));
       setCopiedGuestId(guest.id);
       setTimeout(() => setCopiedGuestId(null), 2000);
     } catch {
